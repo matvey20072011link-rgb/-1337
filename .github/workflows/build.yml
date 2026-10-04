@@ -11,11 +11,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # Указываем скрипту выполнять команды внутри папки с модом
-    defaults:
-      run:
-        working-directory: ./totem-counter-mod
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,5 +37,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: totem-counter-1.21.4
-          # Указываем путь к скомпилированному файлу с учетом папки
-          path: totem-counter-mod/build/libs/*.jar
+          path: build/libs/*.jar
