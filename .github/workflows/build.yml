@@ -1,4 +1,4 @@
-name: Build Totem Counter
+name: Auto-Build Totem Counter
 
 on:
   push:
@@ -25,6 +25,132 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
+
+      - name: Create mod files
+        run: |
+          mkdir -p src/main/java/net/yourname/totemcounter
+          mkdir -p src/main/resources
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx1G
+          minecraft_version=1.21.4
+          yarn_mappings=1.21.4+build.1
+          loader_version=0.15.11
+          fabric_version=0.114.0+1.21.4
+          mod_version=1.0.0
+          maven_group=net.yourname.totemcounter
+          archives_base_name=totemcounter
+          EOF
+
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'fabric-loom' version '1.9-SNAPSHOT'
+              id 'maven-publish'
+          }
+          version = project.mod_version
+          group = project.maven_group
+          base { archivesName = project.archives_base_name }
+          repositories {}
+          dependencies {
+              minecraft "com.mojang:minecraft:${project.minecraft_version}"
+              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+              modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+              modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+          }
+          processResources {
+              inputs.property "version", project.version
+              filesMatching("fabric.mod.json") { expand "version": project.version }
+          }
+          tasks.withType(JavaCompile).configureEach { it.options.release = 21 }
+          java {
+              sourceCompatibility = JavaVersion.VERSION_21
+              targetCompatibility = JavaVersion.VERSION_21
+          }
+          EOF
+
+          cat << 'EOF' > src/main/resources/fabric.mod.json
+          {
+            "schemaVersion": 1,
+            "id": "totemcounter",
+            "version": "${version}",
+            "name": "Totem Counter",
+            "description": "Totem count",
+            "authors": ["You"],
+            "contact": {},
+            "license": "MIT",
+            "environment": "*",
+            "entrypoints": {
+              "main": ["net.yourname.totemcounter.TotemCounter"]
+            },
+            "depends": {
+              "fabricloader": ">=0.15.0",
+              "minecraft": "~1.21.4",
+              "java": ">=21",
+              "fabric-api": "*"
+            }
+          }
+          EOF
+
+          cat << 'EOF' > src/main/java/net/yourname/totemcounter/TotemCounter.java
+          package net.yourname.totemcounter;
+
+          import net.fabricmc.api.ModInitializer;
+          import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+          import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+          import net.minecraft.item.Items;
+          import net.minecraft.scoreboard.*;
+          import net.minecraft.server.MinecraftServer;
+          import net.minecraft.server.network.ServerPlayerEntity;
+          import net.minecraft.text.Text;
+
+          public class TotemCounter implements ModInitializer {
+              private static final String OBJECTIVE_NAME = "totem_count";
+              private int tickCounter = 0;
+
+              @Override
+              public void onInitialize() {
+                  ServerLifecycleEvents.SERVER_STARTED.register(this::setupScoreboard);
+                  ServerTickEvents.END_SERVER_TICK.register(this::onTick);
+              }
+
+              private void setupScoreboard(MinecraftServer server) {
+                  Scoreboard scoreboard = server.getScoreboard();
+                  ScoreboardObjective objective = scoreboard.getNullableObjective(OBJECTIVE_NAME);
+                  if (objective == null) {
+                      objective = scoreboard.addObjective(OBJECTIVE_NAME, ScoreboardCriterion.DUMMY, Text.literal("Тотемы"), ScoreboardCriterion.RenderType.INTEGER, true, null);
+                  }
+                  scoreboard.setObjectiveSlot(ScoreboardDisplaySlot.BELOW_NAME, objective);
+              }
+
+              private void onTick(MinecraftServer server) {
+                  tickCounter++;
+                  if (tickCounter % 10 != 0) return;
+                  Scoreboard scoreboard = server.getScoreboard();
+                  ScoreboardObjective objective = scoreboard.getNullableObjective(OBJECTIVE_NAME);
+                  if (objective == null) return;
+                  for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                      int count = 0;
+                      for (int i = 0; i < player.getInventory().size(); i++) {
+                          if (player.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                              count += player.getInventory().getStack(i).getCount();
+                          }
+                      }
+                      ScoreAccess scoreAccess = scoreboard.getOrCreateScore(player, objective);
+                      scoreAccess.setScore(count);
+                  }
+              }
+          }
+          EOF
 
       - name: Build mod
         run: gradle build
